@@ -1,5 +1,7 @@
 module Lesson02
 
+import Data.Vect
+
 -- ADT
 -- Enumerator
 data Direction = North | South | East | West
@@ -44,4 +46,80 @@ insert' x orig@(BNode tree tree1 y) = case compare x y of
                             GT => BNode tree (insert' x tree1) y    
 
 -- Dependant
+n : Nat
+n = 4
 
+n' : Nat
+n' = S(S(Z))
+
+minusOne : Nat -> Nat
+minusOne 0 = 0
+minusOne (S k) = k
+
+
+data PowerSource = Petrol | Pedal
+
+data Vehicle : PowerSource -> Type where
+    Bicycle : Vehicle Pedal
+    Tricycle : Vehicle Pedal
+    Car : (fuel: Nat) -> Vehicle Petrol
+    Bus : (fuel: Int) -> Vehicle Petrol
+
+refuel : Vehicle Petrol -> Vehicle Petrol
+refuel (Car fuel) = Car (S(fuel))
+refuel (Bus fuel) = Bus (fuel + 100)
+refuel Bicycle impossible
+
+
+-- Lists
+
+l : List Int
+l = 1 :: 2 :: Nil
+
+l' : List Int
+l' = [1, 2, 3]
+
+len : List a -> Nat
+len [] = 0
+len (_ :: xs) = S (len xs)
+
+-- Vectors
+
+ev : Vect 0 Int
+ev = []
+
+sev : Vect 1 Char
+sev = ['a']
+
+failing
+    len' : Vect k b -> Nat
+    len' xs = k
+
+len'' : (k: Nat) -> Vect k b -> Nat
+len'' k xs = k
+
+len''' : {k: Nat} -> Vect k b -> Nat
+len''' {k} _ = k
+
+lenStr : String -> Nat
+lenStr str = case unpack str of
+        [] => 0  
+        (x :: xs) => S (len xs) 
+    
+lenStr' : String -> Nat
+lenStr' str = length (unpack str)
+
+
+longer : String -> String -> Nat
+longer str str1 = 
+    let l1 = (length str) in 
+    let l2 = (length str1) in
+    case compare l1 l2 of
+                LT => l2
+                EQ => l1
+                GT => l1
+
+takeN : Nat -> List a -> List a
+takeN 0 _ = []
+takeN (S k) [] = []
+takeN (S k) (x :: xs) = x :: takeN k xs
