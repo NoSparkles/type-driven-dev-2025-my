@@ -1,0 +1,4 @@
+[custom.all.type-driven-dev-2025]
+type = "local"
+path = "."
+ipkg = "type-driven-dev-2025.ipkg"

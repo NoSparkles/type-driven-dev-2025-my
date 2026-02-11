@@ -1,0 +1,18 @@
+# Idris 2
+*.ttc
+*.ttm
+build
+
+# Idris 1
+*.ibc
+*.o
+
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

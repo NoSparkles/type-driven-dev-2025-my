@@ -1,0 +1,10 @@
+{
+  "image": "vipo/idris2:0.8.0-1",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bamboo.idris2-lsp"
+      ]
+    }
+  }
+}
