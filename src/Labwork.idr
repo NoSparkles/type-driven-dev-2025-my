@@ -96,12 +96,46 @@ inspectRow v with (decEq v (replicate BoardSize True))
   inspectRow (replicate BoardSize True) | (Yes Refl) = Full
   inspectRow v | (No _) = NotFull v
 
-||| The "Blast" logic: clears rows that are Full
+||| Returns True if the row is full, False otherwise
+isRowFull : Vect BoardSize Bool -> Bool
+isRowFull row with (inspectRow row)
+  isRowFull (replicate BoardSize True) | Full = True
+  isRowFull row | (NotFull _) = False
+
+||| Creates a mask of which indices are full (True = Clear this)
+getClearMask : Board -> Vect BoardSize Bool
+getClearMask board = map isRowFull board
+
+||| Clears the board based on pre-calculated row and column masks
+applyMasks : (rowMask : Vect BoardSize Bool) -> 
+             (colMask : Vect BoardSize Bool) -> 
+             Board -> Board
+applyMasks rowMask colMask board = 
+  tabulate (\r => 
+    tabulate (\c => 
+      let cellShouldClear = index r rowMask || index c colMask
+      in if cellShouldClear then False else index c (index r board)
+    )
+  )
+
+||| The "Full Blast": Decides what to clear, then does it all at once
 public export
 clearFullRows : Board -> Board
-clearFullRows board = map checkAndClear board
-  where
-    checkAndClear : Vect BoardSize Bool -> Vect BoardSize Bool
-    checkAndClear row with (inspectRow row)
-      checkAndClear (replicate BoardSize True) | Full = replicate BoardSize False
-      checkAndClear row | (NotFull row) = row
+clearFullRows board = 
+  let rowMask = getClearMask board
+      colMask = getClearMask (transpose board)
+  in applyMasks rowMask colMask board
+
+
+
+testBoard : Board
+testBoard = [
+  [False, False, False, False, False, True, True, True],
+  [False, False, False, False, False, True, True, True],
+  [False, False, False, False, False, True, True, True],
+  [True, True, True, True, True, True, True, True],
+  [False, False, False, False, False, True, False, True],
+  [False, False, False, False, False, True, False, True],
+  [False, False, False, False, False, True, False, True],
+  [False, False, False, False, False, True, True, True]
+]
