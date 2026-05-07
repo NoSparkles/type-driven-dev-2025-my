@@ -202,10 +202,10 @@ testBoard2 = [
   [True, True, False, False, False, False, False, False],
   [True, True, False, False, False, False, False, False],
   [True, True, False, False, False, False, False, False],
-  [True, False, False, False, False, False, False, False]
+  [True, True, False, False, False, False, False, False]
 ]
 
 boardAfterMove : Board
 boardAfterMove = case makeMove testBoard2 1 0 square2x2 of
-            (Left x) => x
+            (Left x) => emptyBoard
             (Right x) => x
