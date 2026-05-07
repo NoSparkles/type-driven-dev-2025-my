@@ -26,12 +26,10 @@ emptyBoard = replicate BoardSize (replicate BoardSize False)
 --- 2. PROOFS OF VACANCY
 --------------------------------------------------------------------------------
 
-||| An extrinsic proof that a cell is currently False (Empty)
 public export
 data IsEmpty : (board : Board) -> (r : Fin BoardSize) -> (c : Fin BoardSize) -> Type where
   ItIsFree : (index c (index r board) = False) -> IsEmpty board r c
 
-||| Contra-proof: If a cell is True, it cannot be IsEmpty
 public export
 occupiedNotFree : (index c (index r board) = True) -> IsEmpty board r c -> Void
 occupiedNotFree prf (ItIsFree freePrf) = 
@@ -47,23 +45,21 @@ public export
 checkCell : (board : Board) -> (r : Fin BoardSize) -> (c : Fin BoardSize) -> Dec (IsEmpty board r c)
 checkCell board r c with (index c (index r board)) proof p
   checkCell board r c | False = Yes (ItIsFree (rewrite p in Refl))
-  checkCell board r c | True  = No (\(ItIsFree contraPrf) => 
-                                     occupiedNotFree p (ItIsFree contraPrf))
+  checkCell board r c | True  = No (\(ItIsFree contraPrf) => occupiedNotFree p (ItIsFree contraPrf))
 
 --------------------------------------------------------------------------------
 --- 4. BOARD UPDATES
 --------------------------------------------------------------------------------
 
-||| Updates a single cell to True.
 public export
-placeBlock : (board : Board) -> (r, c : Fin BoardSize) -> (prf : IsEmpty board r c) -> Board
-placeBlock board r c prf = 
+placeBlock : (board : Board) -> (r : Fin BoardSize) -> (c : Fin BoardSize) -> Board
+placeBlock board r c = 
   let targetRow = index r board
       newRow    = replaceAt c True targetRow
   in replaceAt r newRow board
 
 --------------------------------------------------------------------------------
---- 5. SHAPE LOGIC
+--- 5. SHAPE LOGIC (FIXED FOR UNIFICATION)
 --------------------------------------------------------------------------------
 
 public export
@@ -71,18 +67,63 @@ record Shape where
   constructor MkShape
   offsets : List (Int, Int)
 
-||| Inductive proof that a whole shape fits on the board
 public export
-data CanPlace : (board : Board) -> (baseR, baseC : Int) -> (coords : List (Int, Int)) -> Type where
-  EmptyFits : CanPlace board br bc []
-  BlockFits : {r, c : Int} -> 
-              (resR : Fin BoardSize) -> (resC : Fin BoardSize) ->
-              (prf : IsEmpty board resR resC) ->
-              CanPlace board br bc rest ->
-              CanPlace board br bc ((r, c) :: rest)
+square2x2 : Shape
+square2x2 = MkShape [(0,0), (0,1), (1,0), (1,1)]
+
+public export
+line3v : Shape
+line3v = MkShape [(0,0), (1,0), (2,0)]
+
+public export
+line3h : Shape
+line3h = MkShape [(0,0), (0,1), (0,2)]
+
+public export
+lPiece : Shape
+lPiece = MkShape [(0,0), (1,0), (2,0), (2,1)]
+
+public export
+singleDot : Shape
+singleDot = MkShape [(0,0)]
+
+||| A verified list of actual board coordinates.
+||| This replaces the board-dependent CanPlace to fix the recursion error.
+public export
+data ValidPlacement : List (Int, Int) -> Type where
+  NoMore  : ValidPlacement []
+  NextPos : (resR : Fin BoardSize) -> (resC : Fin BoardSize) -> 
+            ValidPlacement rest -> ValidPlacement ((r, c) :: rest)
+
+||| Corrected applyShape: It now uses ValidPlacement which doesn't change 
+||| when the board is updated.
+public export
+applyShape : (board : Board) -> (coords : List (Int, Int)) -> ValidPlacement coords -> Board
+applyShape board [] NoMore = board
+applyShape board ((r, c) :: rest) (NextPos resR resC step) = 
+  let boardWithBlock = placeBlock board resR resC
+  in applyShape boardWithBlock rest step
 
 --------------------------------------------------------------------------------
---- 6. LINE CLEARING (THE BLAST)
+--- 6. SEARCH ENGINE (Generating the Proof)
+--------------------------------------------------------------------------------
+
+||| Tries to find a valid placement where all cells are currently empty.
+public export
+canPlaceAt : (board : Board) -> (br, bc : Int) -> (offsets : List (Int, Int)) -> 
+             Maybe (ValidPlacement offsets)
+canPlaceAt board br bc [] = Just NoMore
+canPlaceAt board br bc ((offR, offC) :: rest) = do
+  resR <- natToFin (cast (br + offR)) BoardSize
+  resC <- natToFin (cast (bc + offC)) BoardSize
+  case checkCell board resR resC of
+    Yes _ => do
+      later <- canPlaceAt board br bc rest
+      Just (NextPos resR resC later)
+    No _ => Nothing
+
+--------------------------------------------------------------------------------
+--- 7. LINE CLEARING (THE BLAST)
 --------------------------------------------------------------------------------
 
 public export
@@ -96,46 +137,75 @@ inspectRow v with (decEq v (replicate BoardSize True))
   inspectRow (replicate BoardSize True) | (Yes Refl) = Full
   inspectRow v | (No _) = NotFull v
 
-||| Returns True if the row is full, False otherwise
 isRowFull : Vect BoardSize Bool -> Bool
 isRowFull row with (inspectRow row)
-  isRowFull (replicate BoardSize True) | Full = True
-  isRowFull row | (NotFull _) = False
+  isRowFull _ | Full = True
+  isRowFull _ | NotFull _ = False
 
-||| Creates a mask of which indices are full (True = Clear this)
-getClearMask : Board -> Vect BoardSize Bool
-getClearMask board = map isRowFull board
-
-||| Clears the board based on pre-calculated row and column masks
-applyMasks : (rowMask : Vect BoardSize Bool) -> 
-             (colMask : Vect BoardSize Bool) -> 
-             Board -> Board
-applyMasks rowMask colMask board = 
-  tabulate (\r => 
-    tabulate (\c => 
-      let cellShouldClear = index r rowMask || index c colMask
-      in if cellShouldClear then False else index c (index r board)
-    )
-  )
-
-||| The "Full Blast": Decides what to clear, then does it all at once
+||| The "Full Blast": Decides what to clear, then does it all at once.
+||| A cell is cleared if its row is full OR its column is full.
 public export
 clearFullRows : Board -> Board
 clearFullRows board = 
-  let rowMask = getClearMask board
-      colMask = getClearMask (transpose board)
-  in applyMasks rowMask colMask board
+  let rowMask = map isRowFull board
+      colMask = map isRowFull (transpose board) 
+  in 
+    Data.Vect.Fin.tabulate (\r => 
+      Data.Vect.Fin.tabulate (\c => 
+        let shouldBlast = index r rowMask || index c colMask
+        in if shouldBlast then False else index c (index r board)
+      )
+    )
 
+||| Tries to place a shape.
+||| Returns Left originalBoard if it fails.
+||| Returns Right newBoard (after blast) if it succeeds.
+public export
+makeMove : Board -> (br, bc : Int) -> Shape -> Either Board Board
+makeMove board br bc shape with (canPlaceAt board br bc shape.offsets)
+  makeMove board br bc shape | Just prf = 
+    let placedBoard = applyShape board shape.offsets prf
+        blastedBoard = clearFullRows placedBoard
+    in Right blastedBoard
+  makeMove board br bc shape | Nothing = 
+    Left board
 
+||| Generates all possible Fin indices for the board
+allFins : Vect BoardSize (Fin BoardSize)
+allFins = tabulate id
+
+||| Returns True if there is at least one valid spot for the shape
+hasValidMove : Board -> Shape -> Bool
+hasValidMove board shape = 
+  any (\r => any (\c => 
+    isJust (canPlaceAt board (cast (finToNat r)) (cast (finToNat c)) shape.offsets)
+  ) allFins) allFins
 
 testBoard : Board
 testBoard = [
-  [False, False, False, False, False, True, True, True],
-  [False, False, False, False, False, True, True, True],
-  [False, False, False, False, False, True, True, True],
-  [True, True, True, True, True, True, True, True],
-  [False, False, False, False, False, True, False, True],
-  [False, False, False, False, False, True, False, True],
-  [False, False, False, False, False, True, False, True],
-  [False, False, False, False, False, True, True, True]
+  [False, True, True, True, True, True, True, True],
+  [False, False, False, True, False, False, True, True],
+  [False, False, False, True, False, False, True, True],
+  [False, True, False, True, False, False, False, True],
+  [False, False, False, True, False, False, False, True],
+  [False, False, False, True, False, False, False, True],
+  [False, False, False, True, False, False, False, True],
+  [True, True, True, True, False, True, True, True]
 ]
+
+testBoard2 : Board
+testBoard2 = [
+  [True, True, False, False, False, False, False, False],
+  [False, False, False, False, False, False, False, False],
+  [False, False, True, True, True, True, True, False],
+  [True, True, False, False, False, False, False, False],
+  [True, True, False, False, False, False, False, False],
+  [True, True, False, False, False, False, False, False],
+  [True, True, False, False, False, False, False, False],
+  [True, False, False, False, False, False, False, False]
+]
+
+boardAfterMove : Board
+boardAfterMove = case makeMove testBoard2 1 0 square2x2 of
+            (Left x) => x
+            (Right x) => x
