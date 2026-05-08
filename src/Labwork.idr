@@ -4,6 +4,8 @@ import Data.Vect
 import Data.Fin
 import Decidable.Equality
 import Data.String
+import Data.Stream
+import Data.Fuel
 
 %default total
 
@@ -228,19 +230,128 @@ showRow row = "|" ++ (fastConcat $ toList $ map (\b => if b then "■" else "·"
         rows = toList $ map showRow (zip allFins board)
     in unlines (header :: divider :: rows ++ [divider])
 
-||| Show instance for Shapes
+||| Custom Show for Shape to render as a small grid
+||| Custom Show for Shape to render as a small grid
 public export
 Show Shape where
-  show (MkShape offsets) = "Shape: " ++ show offsets
+  show (MkShape []) = "Empty Shape"
+  show (MkShape offsets@((r, c) :: rest)) = 
+    let -- 1. Find the bounds safely by starting with the first element
+        rs = map fst offsets
+        cs = map snd offsets
+        minR = foldl min r rs
+        maxR = foldl max r rs
+        minC = foldl min c cs
+        maxC = foldl max c cs
+        
+        -- 2. Create the coordinate range for the bounding box
+        rowRange = [minR .. maxR]
+        colRange = [minC .. maxC]
+        
+        -- 3. Check if a coordinate is part of the shape
+        isPart : Int -> Int -> Bool
+        isPart r' c' = any (\(or, oc) => or == r' && oc == c') offsets
+        
+        -- 4. Build the string row by row
+        renderRow : Int -> String
+        renderRow r' = (fastConcat $ map (\c' => if isPart r' c' then "■ " else "· ") colRange)
+        
+    in "\n" ++ (unlines $ map renderRow rowRange)
 
+public export
+record GameState where
+  constructor MkGameState
+  board : Board
+  hand  : List Shape -- Our "Hand" of 2 shapes
+
+||| A simple infinite stream of random-ish shapes
+shapePool : List Shape
+shapePool = [square2x2, line3v, line3h, lPiece, singleDot]
+
+||| Cycle through the pool infinitely
+allShapes : Stream Shape
+allShapes = cycle shapePool
+
+
+--------------------------------------------------------------------------------
+--- 9. TOTAL INTERACTIVE LOOP
+--------------------------------------------------------------------------------
+
+||| Processes a turn and returns the new GameState
+||| Returns Nothing if indices are out of bounds or move is illegal
+processTurn : GameState -> (handIdx : Nat) -> (r, c : Int) -> Maybe GameState
+processTurn (MkGameState b hand) idx r c = do
+  targetShape <- nth idx hand
+  case makeMove b r c targetShape of
+    Left _ => Nothing 
+    Right newBoard => Just (MkGameState newBoard (deleteAt idx hand))
+  where
+    nth : Nat -> List a -> Maybe a
+    nth 0 (x::xs) = Just x
+    nth (S k) (x::xs) = nth k xs
+    nth _ _ = Nothing
+
+    deleteAt : Nat -> List a -> List a
+    deleteAt 0 (x::xs) = xs
+    deleteAt (S k) (x::xs) = x :: deleteAt k xs
+    deleteAt _ [] = []
+
+||| The total game loop using built-in Fuel
+total
+gameLoop : Fuel -> GameState -> Stream Shape -> IO ()
+gameLoop Dry _ _ = putStrLn "Game session ended (Out of fuel)."
+gameLoop (More tank) (MkGameState b hand) rest = do
+  -- 1. Refill hand if empty
+  let (currentHand, nextStream) = if null hand 
+                                  then (Prelude.take 2 rest, drop 2 rest) 
+                                  else (hand, rest)
+  
+  -- 2. Display State
+  putStrLn (show @{GameView} b)
+  putStrLn "Your Hand:"
+  let showHand = zipWith (\i, s => show i ++ ": " ++ show s) [0..1] currentHand
+  putStrLn (unlines showHand)
+  
+  -- 3. Input
+  putStr "Enter <shapeIdx> <row> <col>: "
+  input <- getLine
+  let cmds = map cast (words input)
+  
+  case cmds of
+    [sIdx, r, c] => 
+      case processTurn (MkGameState b currentHand) (fromInteger (cast sIdx)) r c of
+        Just nextState => do
+          putStrLn "--- Move Accepted ---"
+          gameLoop tank nextState nextStream
+        Nothing => do
+          putStrLn "!!! Invalid Move !!!"
+          gameLoop tank (MkGameState b currentHand) nextStream
+    _ => do
+      putStrLn "Error: Enter three numbers (e.g., 0 3 3)"
+      gameLoop tank (MkGameState b currentHand) nextStream
+
+||| A simple LCG for pseudo-random shapes
+randomShapes : Stream Int -> List Shape -> Stream Shape
+randomShapes (n :: ns) pool = 
+  let idx = cast (abs n `mod` cast (length pool))
+      shape = maybe singleDot id (indexOpt idx pool)
+  in shape :: randomShapes ns pool
+  where
+    indexOpt : Nat -> List a -> Maybe a
+    indexOpt 0 (x::xs) = Just x
+    indexOpt (S k) (x::xs) = indexOpt k xs
+    indexOpt _ _ = Nothing
+
+seedStream : Stream Int
+seedStream = iterate (\n => (n * 1103515245 + 12345) `mod` 2147483647) 12345
+
+--------------------------------------------------------------------------------
+--- 10. MAIN
+--------------------------------------------------------------------------------
+
+covering
 main : IO ()
 main = do
-  putStrLn "Current Board State:"
-  putStrLn (show @{GameView} testBoard2)
-  
-  putStrLn "Attempting to place square at (1,0)..."
-  case makeMove testBoard2 1 0 square2x2 of
-    Left _ => putStrLn "Move failed!"
-    Right newBoard => do
-      putStrLn "Success! Board after move and blast:"
-      putStrLn (show @{GameView} newBoard)
+  let shapes = randomShapes seedStream [square2x2, line3v, line3h, lPiece, singleDot]
+  -- Start the loop with the built-in 'forever' fuel
+  gameLoop forever (MkGameState emptyBoard []) shapes
