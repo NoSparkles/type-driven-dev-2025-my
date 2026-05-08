@@ -122,29 +122,29 @@ data ValidPlacement : List (Int, Int) -> Type where
             ValidPlacement rest -> ValidPlacement ((r, c) :: rest)
 
 public export
-applyShape : (board : Board) -> (coords : List (Int, Int)) -> ValidPlacement coords -> Board
-applyShape board [] NoMore = board
-applyShape board ((r, c) :: rest) (NextPos resR resC step) = 
+applyShape : (board : Board) -> (shape : Shape) -> ValidPlacement shape.offsets -> Board
+applyShape board (MkShape []) NoMore = board
+applyShape board (MkShape ((r, c) :: rest)) (NextPos resR resC step) = 
   let boardWithBlock = placeBlock board resR resC
-  in applyShape boardWithBlock rest step
+  in applyShape boardWithBlock (MkShape rest) step
 
 public export
-canPlaceAt : (board : Board) -> (br, bc : Int) -> (offsets : List (Int, Int)) -> 
-             Maybe (ValidPlacement offsets)
-canPlaceAt board br bc [] = Just NoMore
-canPlaceAt board br bc ((offR, offC) :: rest) = do
+canPlaceAt : (board : Board) -> (br, bc : Int) -> (shape : Shape) -> 
+             Maybe (ValidPlacement shape.offsets)
+canPlaceAt board br bc (MkShape []) = Just NoMore
+canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
   resR <- natToFin (cast (br + offR)) BoardSize
   resC <- natToFin (cast (bc + offC)) BoardSize
   case checkCell board resR resC of
     Yes _ => do
-      later <- canPlaceAt board br bc rest
+      later <- canPlaceAt board br bc (MkShape rest)
       Just (NextPos resR resC later)
     No _ => Nothing
 
 canFitAnywhere : Board -> Shape -> Bool
 canFitAnywhere board shape = 
   any (\r => any (\c => 
-    isJust (canPlaceAt board r c shape.offsets)
+    isJust (canPlaceAt board r c shape)
   ) [0..7]) [0..7]
   where
     isJust : Maybe a -> Bool
@@ -185,9 +185,9 @@ clearFullRows board =
 
 public export
 makeMove : Board -> (br, bc : Int) -> Shape -> Either Board Board
-makeMove board br bc shape with (canPlaceAt board br bc shape.offsets)
+makeMove board br bc shape with (canPlaceAt board br bc shape)
   makeMove board br bc shape | Just prf = 
-    let placedBoard = applyShape board shape.offsets prf
+    let placedBoard = applyShape board shape prf
         blastedBoard = clearFullRows placedBoard
     in Right blastedBoard
   makeMove board br bc shape | Nothing = 
@@ -199,7 +199,7 @@ allFins = tabulate id
 hasValidMove : Board -> Shape -> Bool
 hasValidMove board shape = 
   any (\r => any (\c => 
-    isJust (canPlaceAt board (cast (finToNat r)) (cast (finToNat c)) shape.offsets)
+    isJust (canPlaceAt board (cast (finToNat r)) (cast (finToNat c)) shape)
   ) allFins) allFins
 
 showRow : Vect n Bool -> String
