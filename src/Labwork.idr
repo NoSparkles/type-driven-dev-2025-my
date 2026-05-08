@@ -141,6 +141,19 @@ canPlaceAt board br bc ((offR, offC) :: rest) = do
       Just (NextPos resR resC later)
     No _ => Nothing
 
+canFitAnywhere : Board -> Shape -> Bool
+canFitAnywhere board shape = 
+  any (\r => any (\c => 
+    isJust (canPlaceAt board r c shape.offsets)
+  ) [0..7]) [0..7]
+  where
+    isJust : Maybe a -> Bool
+    isJust (Just _) = True
+    isJust Nothing  = False
+
+anyMovesPossible : Board -> List Shape -> Bool
+anyMovesPossible board hand = any (canFitAnywhere board) hand
+
 public export
 data RowStatus : Vect n Bool -> Type where
   Full    : RowStatus (replicate n True)
@@ -285,27 +298,34 @@ gameLoop (More tank) (MkGameState b hand) rest = do
                                   then (Prelude.take 3 rest, drop 3 rest) 
                                   else (hand, rest)
   
-  putStrLn (show @{GameView} b)
-  putStrLn "Your Hand:"
-  let showHand = zipWith (\i, s => show i ++ ": " ++ show s) [0..2] currentHand
-  putStrLn (unlines showHand)
-  
-  putStr "Enter <shapeIdx> <row> <col>: "
-  input <- getLine
-  let cmds = map cast (words input)
-  
-  case cmds of
-    [sIdx, r, c] => 
-      case processTurn (MkGameState b currentHand) (fromInteger (cast sIdx)) r c of
-        Just nextState => do
-          putStrLn "--- Move Accepted ---"
-          gameLoop tank nextState nextStream
-        Nothing => do
-          putStrLn "!!! Invalid Move !!!"
+  if not (anyMovesPossible b currentHand)
+    then do
+      putStrLn (show @{GameView} b)
+      putStrLn "!!! GAME OVER !!! No more moves possible."
+      putStrLn "Restarting game..."
+      gameLoop tank (MkGameState emptyBoard []) nextStream
+    else do
+      putStrLn (show @{GameView} b)
+      putStrLn "Your Hand:"
+      let handDisplay = zipWith (\i, s => show i ++ ":" ++ show s) [0..2] currentHand
+      putStrLn (unlines handDisplay)
+      
+      putStr "Enter <shapeIdx> <row> <col>: "
+      input <- getLine
+      let cmds = map cast (words input)
+      
+      case cmds of
+        [sIdx, r, c] => 
+          case processTurn (MkGameState b currentHand) (fromInteger (cast sIdx)) r c of
+            Just nextState => do
+              putStrLn "--- Move Accepted ---"
+              gameLoop tank nextState nextStream
+            Nothing => do
+              putStrLn "!!! Invalid Move !!!"
+              gameLoop tank (MkGameState b currentHand) nextStream
+        _ => do
+          putStrLn "Error: Use format '0 3 3'"
           gameLoop tank (MkGameState b currentHand) nextStream
-    _ => do
-      putStrLn "Error: Enter three numbers (e.g., 0 3 3)"
-      gameLoop tank (MkGameState b currentHand) nextStream
 
 covering
 main : IO ()
