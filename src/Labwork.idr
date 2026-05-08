@@ -3,6 +3,7 @@ module Labwork
 import Data.Vect
 import Data.Fin
 import Decidable.Equality
+import Data.String
 
 %default total
 
@@ -209,3 +210,37 @@ boardAfterMove : Board
 boardAfterMove = case makeMove testBoard2 1 0 square2x2 of
             (Left x) => emptyBoard
             (Right x) => x
+
+||| Converts a single row to a string representation
+showRow : Vect n Bool -> String
+showRow row = "|" ++ (fastConcat $ toList $ map (\b => if b then "■" else "·") row) ++ "|"
+
+||| A custom view for the board to make it look like a grid
+[GameView] Show Board where
+  show board = 
+    let header = "   0 1 2 3 4 5 6 7"
+        divider = "  -----------------"
+        -- Helper to format rows
+        showRow : (Fin BoardSize, Vect BoardSize Bool) -> String
+        showRow (i, row) = show (finToNat i) ++ "| " ++ (fastConcat $ toList $ map (\b => if b then "■ " else "· ") row) ++ "|"
+        
+        -- Zip with indices to get row numbers
+        rows = toList $ map showRow (zip allFins board)
+    in unlines (header :: divider :: rows ++ [divider])
+
+||| Show instance for Shapes
+public export
+Show Shape where
+  show (MkShape offsets) = "Shape: " ++ show offsets
+
+main : IO ()
+main = do
+  putStrLn "Current Board State:"
+  putStrLn (show @{GameView} testBoard2)
+  
+  putStrLn "Attempting to place square at (1,0)..."
+  case makeMove testBoard2 1 0 square2x2 of
+    Left _ => putStrLn "Move failed!"
+    Right newBoard => do
+      putStrLn "Success! Board after move and blast:"
+      putStrLn (show @{GameView} newBoard)
