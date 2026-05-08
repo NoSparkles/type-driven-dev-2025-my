@@ -295,7 +295,6 @@ seedStream = iterate (\n => (n * 1103515245 + 12345) `mod` 2147483647) 12345
 gameLoop : Fuel -> GameState -> Stream Shape -> IO ()
 gameLoop Dry _ _ = putStrLn "Game session ended (Out of fuel)." 
 gameLoop (More tank) (MkGameState b hand) rest = do
-  -- 1. Determine the active hand for this turn
   let (currentHand, nextStream) = if null hand 
                                   then (Prelude.take 3 rest, drop 3 rest) 
                                   else (hand, rest) 
