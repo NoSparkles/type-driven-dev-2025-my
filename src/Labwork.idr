@@ -116,13 +116,14 @@ line3h : Shape
 line3h = MkShape [(0,0), (0,1), (0,2)]
 
 public export
-data ValidPlacement : List (Int, Int) -> Type where
-  NoMore  : ValidPlacement []
+data ValidPlacement : Shape -> Type where
+  NoMore  : ValidPlacement (MkShape [])
   NextPos : (resR : Fin BoardSize) -> (resC : Fin BoardSize) -> 
-            ValidPlacement rest -> ValidPlacement ((r, c) :: rest)
+            ValidPlacement (MkShape rest) -> 
+            ValidPlacement (MkShape ((r, c) :: rest))
 
 public export
-applyShape : (board : Board) -> (shape : Shape) -> ValidPlacement shape.offsets -> Board
+applyShape : (board : Board) -> (shape : Shape) -> ValidPlacement shape -> Board
 applyShape board (MkShape []) NoMore = board
 applyShape board (MkShape ((r, c) :: rest)) (NextPos resR resC step) = 
   let boardWithBlock = placeBlock board resR resC
@@ -130,7 +131,7 @@ applyShape board (MkShape ((r, c) :: rest)) (NextPos resR resC step) =
 
 public export
 canPlaceAt : (board : Board) -> (br, bc : Int) -> (shape : Shape) -> 
-             Maybe (ValidPlacement shape.offsets)
+             Maybe (ValidPlacement shape)
 canPlaceAt board br bc (MkShape []) = Just NoMore
 canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
   resR <- natToFin (cast (br + offR)) BoardSize
@@ -292,39 +293,39 @@ seedStream : Stream Int
 seedStream = iterate (\n => (n * 1103515245 + 12345) `mod` 2147483647) 12345
 
 gameLoop : Fuel -> GameState -> Stream Shape -> IO ()
-gameLoop Dry _ _ = putStrLn "Game session ended (Out of fuel)."
+gameLoop Dry _ _ = putStrLn "Game session ended (Out of fuel)." 
 gameLoop (More tank) (MkGameState b hand) rest = do
+  -- 1. Determine the active hand for this turn
   let (currentHand, nextStream) = if null hand 
                                   then (Prelude.take 3 rest, drop 3 rest) 
-                                  else (hand, rest)
+                                  else (hand, rest) 
   
+  putStrLn (show @{GameView} b) 
+  putStrLn "Your Hand:"
+  let handDisplay = zipWith (\i, s => show i ++ ":" ++ show s) [0..(length currentHand)] currentHand 
+  putStrLn (unlines handDisplay) 
+
   if not (anyMovesPossible b currentHand)
     then do
-      putStrLn (show @{GameView} b)
-      putStrLn "!!! GAME OVER !!! No more moves possible."
+      putStrLn "!!! GAME OVER !!! No more moves possible with the remaining hand." 
       putStrLn "Restarting game..."
-      gameLoop tank (MkGameState emptyBoard []) nextStream
+      gameLoop tank (MkGameState emptyBoard []) nextStream 
     else do
-      putStrLn (show @{GameView} b)
-      putStrLn "Your Hand:"
-      let handDisplay = zipWith (\i, s => show i ++ ":" ++ show s) [0..2] currentHand
-      putStrLn (unlines handDisplay)
-      
       putStr "Enter <shapeIdx> <row> <col>: "
-      input <- getLine
-      let cmds = map cast (words input)
+      input <- getLine 
+      let cmds = map cast (words input) 
       
       case cmds of
         [sIdx, r, c] => 
           case processTurn (MkGameState b currentHand) (fromInteger (cast sIdx)) r c of
             Just nextState => do
               putStrLn "--- Move Accepted ---"
-              gameLoop tank nextState nextStream
+              gameLoop tank nextState nextStream 
             Nothing => do
-              putStrLn "!!! Invalid Move !!!"
-              gameLoop tank (MkGameState b currentHand) nextStream
+              putStrLn "!!! Invalid Move !!!" 
+              gameLoop tank (MkGameState b currentHand) nextStream 
         _ => do
-          putStrLn "Error: Use format '0 3 3'"
+          putStrLn "Error: Use format '0 3 3'" 
           gameLoop tank (MkGameState b currentHand) nextStream
 
 covering
