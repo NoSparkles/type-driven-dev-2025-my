@@ -120,66 +120,77 @@ allFins : Vect BoardSize (Fin BoardSize)
 allFins = tabulate id
 
 public export
-data ValidPlacement : Shape -> Type where
-  NoMore  : ValidPlacement (MkShape [])
-  NextPos : (resR : Fin BoardSize) -> (resC : Fin BoardSize) -> 
-            ValidPlacement (MkShape rest) -> 
-            ValidPlacement (MkShape ((r, c) :: rest))
+data OffsetValid : Board -> (baseR, baseC : Int) -> (offset : (Int, Int)) -> Type where
+  MkOffsetValid : {baseR, baseC : Int} -> {offR, offC : Int} ->
+                  (resR : Fin BoardSize) -> 
+                  (resC : Fin BoardSize) -> 
+                  IsEmpty board resR resC -> 
+                  OffsetValid board baseR baseC (offR, offC)
 
 public export
-applyShape : (board : Board) -> (shape : Shape) -> ValidPlacement shape -> Board
-applyShape board (MkShape []) NoMore = board
-applyShape board (MkShape ((r, c) :: rest)) (NextPos resR resC step) = 
-  let boardWithBlock = placeBlock board resR resC
-  in applyShape boardWithBlock (MkShape rest) step
+data ValidPlacement : Board -> (br, bc : Int) -> Shape -> Type where
+  NoMore  : {board : Board} -> {br, bc : Int} -> 
+            ValidPlacement board br bc (MkShape [])
+
+  NextPos : {board : Board} -> {br, bc : Int} -> {rest : List (Int, Int)} ->
+            {offR, offC : Int} ->
+            OffsetValid board br bc (offR, offC) ->
+            ValidPlacement board br bc (MkShape rest) ->
+            ValidPlacement board br bc (MkShape ((offR, offC) :: rest))
 
 public export
-canPlaceAt : (board : Board) -> (br, bc : Int) -> (shape : Shape) -> 
-             Maybe (ValidPlacement shape)
+applyPlacement : Board -> ValidPlacement b br bc s -> Board
+applyPlacement board NoMore = board
+applyPlacement board (NextPos (MkOffsetValid r c _) rest) = 
+  let nextBoard = placeBlock board r c
+  in applyPlacement nextBoard rest
+
+public export
+applyShape : (board : Board) -> (br, bc : Int) -> (s : Shape) -> ValidPlacement board br bc s -> Board
+applyShape board br bc s prf = applyPlacement board prf
+
+public export
+canPlaceAt : (board : Board) -> (br, bc : Int) -> (s : Shape) -> Maybe (ValidPlacement board br bc s)
 canPlaceAt board br bc (MkShape []) = Just NoMore
 canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
   resR <- natToFin (cast (br + offR)) BoardSize
   resC <- natToFin (cast (bc + offC)) BoardSize
   case checkCell board resR resC of
-    Yes _ => do
+    Yes prf => do
       later <- canPlaceAt board br bc (MkShape rest)
-      Just (NextPos resR resC later)
+      Just (NextPos (MkOffsetValid resR resC prf) later)
     No _ => Nothing
 
 public export
 AnyMove : Board -> List Shape -> Type
 AnyMove board hand = 
-  (s : Shape ** (r : Fin BoardSize ** (c : Fin BoardSize ** (Elem s hand, ValidPlacement s))))
+  (s : Shape ** (r : Fin BoardSize ** (c : Fin BoardSize ** (Elem s hand, ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s))))
 
-findFit : (board : Board) -> (s : Shape) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement s)
+findFit : (board : Board) -> (s : Shape) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s)
 findFit board s = searchRows allFins
   where
-    searchCols : Fin BoardSize -> Vect n (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement s)
+    searchCols : Fin BoardSize -> Vect n (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s)
     searchCols r [] = Nothing
     searchCols r (c :: cs) = 
       case canPlaceAt board (cast (finToNat r)) (cast (finToNat c)) s of
         Just prf => Just (r ** c ** prf)
         Nothing  => searchCols r cs
 
-    searchRows : Vect m (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement s)
+    searchRows : Vect m (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s)
     searchRows [] = Nothing
     searchRows (r :: rs) = 
       case searchCols r allFins of
         Just result => Just result
         Nothing     => searchRows rs
-  where
-    firstJust : List a -> Maybe a
-    firstJust [] = Nothing
-    firstJust (x :: xs) = Just x
 
 anyMovesPossible : (board : Board) -> (hand : List Shape) -> Maybe (AnyMove board hand)
 anyMovesPossible board [] = Nothing
 anyMovesPossible board (s :: ss) = 
   case findFit board s of
     Just (r ** c ** prf) => Just (s ** r ** c ** (Here, prf))
-    Nothing => do
-      (s' ** r ** c ** (idx, prf)) <- anyMovesPossible board ss
-      Just (s' ** r ** c ** (There idx, prf))
+    Nothing => case anyMovesPossible board ss of
+      Just (s' ** r ** c ** (idx, prf)) => Just (s' ** r ** c ** (There idx, prf))
+      Nothing => Nothing
 
 public export
 data RowStatus : Vect n Bool -> Type where
@@ -214,7 +225,7 @@ public export
 makeMove : Board -> (br, bc : Int) -> Shape -> Either Board Board
 makeMove board br bc shape with (canPlaceAt board br bc shape)
   makeMove board br bc shape | Just prf = 
-    let placedBoard = applyShape board shape prf
+    let placedBoard = applyShape board br bc shape prf
         blastedBoard = clearFullRows placedBoard
     in Right blastedBoard
   makeMove board br bc shape | Nothing = 
