@@ -42,7 +42,7 @@ public export
 placeBlock : (board : Board) -> (r : Fin BoardSize) -> (c : Fin BoardSize) -> Board
 placeBlock board r c = 
   let targetRow = index r board
-      newRow    = replaceAt c True targetRow
+      newRow = replaceAt c True targetRow
   in replaceAt r newRow board
 
 public export
@@ -57,10 +57,10 @@ iPieceH : Shape
 iPieceH = MkShape [(0,0), (0,1), (0,2), (0,3)]
 
 tUp : Shape
-tUp    = MkShape [(0,1), (1,0), (1,1), (1,2)]
+tUp = MkShape [(0,1), (1,0), (1,1), (1,2)]
 
 tDown : Shape
-tDown  = MkShape [(0,0), (0,1), (0,2), (1,1)]
+tDown = MkShape [(0,0), (0,1), (0,2), (1,1)]
 
 tLeft : Shape
 tLeft  = MkShape [(0,1), (1,0), (1,1), (2,1)]
@@ -210,6 +210,7 @@ showRow row = "|" ++ (fastConcat $ toList $ map (\b => if b then "■" else "·"
   show board = 
     let header = "   0 1 2 3 4 5 6 7"
         divider = "  -----------------"
+        
         showRow : (Fin BoardSize, Vect BoardSize Bool) -> String
         showRow (i, row) = show (finToNat i) ++ "| " ++ (fastConcat $ toList $ map (\b => if b then "■ " else "· ") row) ++ "|"
         
@@ -248,15 +249,15 @@ record GameState where
 public export
 shapePool : List Shape
 shapePool = [ 
-    iPieceV, iPieceH, 
-    tUp, tDown, tLeft, tRight,
-    lRight1, lRight2, lRight3, lRight4,
-    jLeft1, jLeft2, jLeft3, jLeft4,
-    sPieceH, sPieceV, 
-    zPieceH, zPieceV,
-    oPiece, 
-    singleDot, line3v, line3h 
-  ]
+  iPieceV, iPieceH, 
+  tUp, tDown, tLeft, tRight,
+  lRight1, lRight2, lRight3, lRight4,
+  jLeft1, jLeft2, jLeft3, jLeft4,
+  sPieceH, sPieceV, 
+  zPieceH, zPieceV,
+  oPiece, 
+  singleDot, line3v, line3h 
+]
 
 allShapes : Stream Shape
 allShapes = cycle shapePool
