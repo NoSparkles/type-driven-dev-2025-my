@@ -124,7 +124,9 @@ data OffsetValid : Board -> (baseR, baseC : Int) -> (offset : (Int, Int)) -> Typ
   MkOffsetValid : {baseR, baseC : Int} -> {offR, offC : Int} ->
                   (resR : Fin BoardSize) -> 
                   (resC : Fin BoardSize) -> 
-                  IsEmpty board resR resC -> 
+                  (IsEmpty board resR resC) -> 
+                  (the Integer (cast (finToNat resR)) = cast baseR + cast offR) ->
+                  (the Integer (cast (finToNat resC)) = cast baseC + cast offC) ->
                   OffsetValid board baseR baseC (offR, offC)
 
 public export
@@ -139,26 +141,39 @@ data ValidPlacement : Board -> (br, bc : Int) -> Shape -> Type where
             ValidPlacement board br bc (MkShape ((offR, offC) :: rest))
 
 public export
-applyPlacement : Board -> ValidPlacement b br bc s -> Board
+applyPlacement : Board -> ValidPlacement board br bc s -> Board
 applyPlacement board NoMore = board
-applyPlacement board (NextPos (MkOffsetValid r c _) rest) = 
+applyPlacement board (NextPos (MkOffsetValid r c _ _ _) rest) = 
   let nextBoard = placeBlock board r c
   in applyPlacement nextBoard rest
+
+integerToFinWithProof : (n : Integer) -> (m : Nat) -> 
+                        Maybe (f : Fin m ** cast (finToNat f) = n)
+integerToFinWithProof n m = case integerToFin n m of
+  Just f => case decEq (the Integer (cast (finToNat f))) n of
+    Yes prf => Just (f ** prf)
+    No _    => Nothing
+  Nothing => Nothing
 
 public export
 applyShape : (board : Board) -> (br, bc : Int) -> (s : Shape) -> ValidPlacement board br bc s -> Board
 applyShape board br bc s prf = applyPlacement board prf
 
-public export
+checkWithProof : (base : Int) -> (off : Int) -> 
+                 Maybe (res : Fin BoardSize ** cast (finToNat res) = (the Integer (cast base)) + (the Integer (cast off)))
+checkWithProof base off = 
+  integerToFinWithProof (cast base + cast off) BoardSize
+
 canPlaceAt : (board : Board) -> (br, bc : Int) -> (s : Shape) -> Maybe (ValidPlacement board br bc s)
 canPlaceAt board br bc (MkShape []) = Just NoMore
 canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
-  resR <- natToFin (cast (br + offR)) BoardSize
-  resC <- natToFin (cast (bc + offC)) BoardSize
+  (resR ** proofR) <- checkWithProof br offR
+  (resC ** proofC) <- checkWithProof bc offC
+  
   case checkCell board resR resC of
-    Yes prf => do
+    Yes emptyPrf => do
       later <- canPlaceAt board br bc (MkShape rest)
-      Just (NextPos (MkOffsetValid resR resC prf) later)
+      Just (NextPos (MkOffsetValid resR resC emptyPrf proofR proofC) later)
     No _ => Nothing
 
 public export
