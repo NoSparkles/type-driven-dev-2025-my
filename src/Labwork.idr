@@ -49,7 +49,7 @@ placeBlock board r c =
 public export
 record Shape where
   constructor MkShape
-  offsets : List (Fin BoardSize, Fin BoardSize)
+  offsets : List (Int, Int)
 
 iPieceV : Shape
 iPieceV = MkShape [(0,0), (1,0), (2,0), (3,0)]
@@ -116,90 +116,81 @@ line3v = MkShape [(0,0), (1,0), (2,0)]
 line3h : Shape
 line3h = MkShape [(0,0), (0,1), (0,2)]
 
-public export
-data BoundedOffset : (base : Fin BoardSize) -> (offset : Fin BoardSize) -> Type where
-  MkBoundedOffset : {base, offset : Fin BoardSize} ->
-                    (res : Fin BoardSize) ->
-                    (natToFin (finToNat base + finToNat offset) BoardSize = Just res) ->
-                    BoundedOffset base offset
-
-public export
-data OffsetValid : Board -> (br, bc : Fin BoardSize) -> (offR, offC : Fin BoardSize) -> Type where
-  MkOffsetValid : {board : Board} -> {br, bc, offR, offC : Fin BoardSize} ->
-                  (resR, resC : Fin BoardSize) ->
-                  (IsEmpty board resR resC) ->
-                  (BoundedOffset br offR) ->
-                  (BoundedOffset bc offC) ->
-                  OffsetValid board br bc offR offC
-
-public export
-data ValidPlacement : Board -> (br, bc : Fin BoardSize) -> Shape -> Type where
-  NoMore  : ValidPlacement board br bc (MkShape [])
-  NextPos : {offR, offC : Fin BoardSize} ->
-            OffsetValid board br bc offR offC ->
-            ValidPlacement board br bc (MkShape rest) ->
-            ValidPlacement board br bc (MkShape ((offR, offC) :: rest))
-
-public export
-applyPlacement : (currentBoard : Board) -> ValidPlacement board br bc s -> Board
-applyPlacement currentBoard NoMore = currentBoard
-applyPlacement currentBoard (NextPos (MkOffsetValid resR resC _ _ _) rest) = 
-  let nextBoard = placeBlock currentBoard resR resC
-  in applyPlacement nextBoard rest
-
-public export
-applyShape : (board : Board) -> (br, bc : Fin BoardSize) -> (s : Shape) -> 
-             ValidPlacement board br bc s -> Board
-applyShape board br bc s prf = applyPlacement board prf
-
-checkBounds : (b : Fin BoardSize) -> (o : Fin BoardSize) -> Maybe (BoundedOffset b o)
-checkBounds b o with (natToFin (finToNat b + finToNat o) BoardSize) proof p
-  checkBounds b o | Just res = Just (MkBoundedOffset res p)
-  checkBounds b o | Nothing  = Nothing
-
-public export
-canPlaceAt : (board : Board) -> (br, bc : Fin BoardSize) -> (s : Shape) -> 
-             Maybe (ValidPlacement board br bc s)
-canPlaceAt board br bc (MkShape []) = Just NoMore
-canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
-  -- 1. Verify math is within 0-7
-  proofR@(MkBoundedOffset resR _) <- checkBounds br offR
-  proofC@(MkBoundedOffset resC _) <- checkBounds bc offC
-  
-  -- 2. Verify cell is empty
-  case checkCell board resR resC of
-    Yes emptyPrf => do
-      later <- canPlaceAt board br bc (MkShape rest)
-      -- 3. Construct the verified placement
-      Just (NextPos (MkOffsetValid resR resC emptyPrf proofR proofC) later)
-    No _ => Nothing
-
 allFins : Vect BoardSize (Fin BoardSize)
 allFins = tabulate id
 
 public export
-MovePossible : Board -> List Shape -> Type
-MovePossible board hand = 
-  (s : Shape ** (br : Fin BoardSize ** (bc : Fin BoardSize ** ValidPlacement board br bc s)))
+data OffsetValid : Board -> (baseR, baseC : Int) -> (offset : (Int, Int)) -> Type where
+  MkOffsetValid : {baseR, baseC : Int} -> {offR, offC : Int} ->
+                  (resR : Fin BoardSize) -> 
+                  (resC : Fin BoardSize) -> 
+                  IsEmpty board resR resC -> 
+                  OffsetValid board baseR baseC (offR, offC)
 
-findMove : (board : Board) -> (hand : List Shape) -> Maybe (MovePossible board hand)
-findMove board [] = Nothing
-findMove board (s :: ss) = 
-  case searchBoard board s of
-    Just (br ** (bc ** prf)) => Just (s ** (br ** (bc ** prf)))
-    Nothing => findMove board ss
+public export
+data ValidPlacement : Board -> (br, bc : Int) -> Shape -> Type where
+  NoMore  : {board : Board} -> {br, bc : Int} -> 
+            ValidPlacement board br bc (MkShape [])
+
+  NextPos : {board : Board} -> {br, bc : Int} -> {rest : List (Int, Int)} ->
+            {offR, offC : Int} ->
+            OffsetValid board br bc (offR, offC) ->
+            ValidPlacement board br bc (MkShape rest) ->
+            ValidPlacement board br bc (MkShape ((offR, offC) :: rest))
+
+public export
+applyPlacement : Board -> ValidPlacement b br bc s -> Board
+applyPlacement board NoMore = board
+applyPlacement board (NextPos (MkOffsetValid r c _) rest) = 
+  let nextBoard = placeBlock board r c
+  in applyPlacement nextBoard rest
+
+public export
+applyShape : (board : Board) -> (br, bc : Int) -> (s : Shape) -> ValidPlacement board br bc s -> Board
+applyShape board br bc s prf = applyPlacement board prf
+
+public export
+canPlaceAt : (board : Board) -> (br, bc : Int) -> (s : Shape) -> Maybe (ValidPlacement board br bc s)
+canPlaceAt board br bc (MkShape []) = Just NoMore
+canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
+  resR <- natToFin (cast (br + offR)) BoardSize
+  resC <- natToFin (cast (bc + offC)) BoardSize
+  case checkCell board resR resC of
+    Yes prf => do
+      later <- canPlaceAt board br bc (MkShape rest)
+      Just (NextPos (MkOffsetValid resR resC prf) later)
+    No _ => Nothing
+
+public export
+AnyMove : Board -> List Shape -> Type
+AnyMove board hand = 
+  (s : Shape ** (r : Fin BoardSize ** (c : Fin BoardSize ** (Elem s hand, ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s))))
+
+findFit : (board : Board) -> (s : Shape) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s)
+findFit board s = searchRows allFins
   where
-    searchBoard : (b : Board) -> (sh : Shape) -> 
-                  Maybe (br : Fin BoardSize ** (bc : Fin BoardSize ** ValidPlacement b br bc sh))
-    searchBoard b sh = firstJust (toList [(r, c) | r <- allFins, c <- allFins])
-      where 
-        firstJust : List (Fin BoardSize, Fin BoardSize) -> 
-                    Maybe (r : Fin BoardSize ** (c : Fin BoardSize ** ValidPlacement b r c sh))
-        firstJust [] = Nothing
-        firstJust ((r, c) :: xs) = 
-          case canPlaceAt b r c sh of
-            Just prf => Just (r ** (c ** prf))
-            Nothing  => firstJust xs
+    searchCols : Fin BoardSize -> Vect n (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s)
+    searchCols r [] = Nothing
+    searchCols r (c :: cs) = 
+      case canPlaceAt board (cast (finToNat r)) (cast (finToNat c)) s of
+        Just prf => Just (r ** c ** prf)
+        Nothing  => searchCols r cs
+
+    searchRows : Vect m (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s)
+    searchRows [] = Nothing
+    searchRows (r :: rs) = 
+      case searchCols r allFins of
+        Just result => Just result
+        Nothing     => searchRows rs
+
+anyMovesPossible : (board : Board) -> (hand : List Shape) -> Maybe (AnyMove board hand)
+anyMovesPossible board [] = Nothing
+anyMovesPossible board (s :: ss) = 
+  case findFit board s of
+    Just (r ** c ** prf) => Just (s ** r ** c ** (Here, prf))
+    Nothing => case anyMovesPossible board ss of
+      Just (s' ** r ** c ** (idx, prf)) => Just (s' ** r ** c ** (There idx, prf))
+      Nothing => Nothing
 
 public export
 data RowStatus : Vect n Bool -> Type where
@@ -231,7 +222,7 @@ clearFullRows board =
     )
 
 public export
-makeMove : Board -> (br, bc : Fin BoardSize) -> Shape -> Either Board Board
+makeMove : Board -> (br, bc : Int) -> Shape -> Either Board Board
 makeMove board br bc shape with (canPlaceAt board br bc shape)
   makeMove board br bc shape | Just prf = 
     let placedBoard = applyShape board br bc shape prf
@@ -240,16 +231,11 @@ makeMove board br bc shape with (canPlaceAt board br bc shape)
   makeMove board br bc shape | Nothing = 
     Left board
 
-public export
 hasValidMove : Board -> Shape -> Bool
 hasValidMove board shape = 
   any (\r => any (\c => 
-    isJust (canPlaceAt board r c shape)
+    isJust (canPlaceAt board (cast (finToNat r)) (cast (finToNat c)) shape)
   ) allFins) allFins
-  where
-    isJust : Maybe a -> Bool
-    isJust (Just _) = True
-    isJust Nothing  = False
 
 showRow : Vect n Bool -> String
 showRow row = "|" ++ (fastConcat $ toList $ map (\b => if b then "■" else "·") row) ++ "|"
@@ -268,34 +254,23 @@ showRow row = "|" ++ (fastConcat $ toList $ map (\b => if b then "■" else "·"
 public export
 Show Shape where
   show (MkShape []) = "Empty Shape"
-  show (MkShape offsets@((fR, fC) :: rest)) = 
+  show (MkShape offsets@((r, c) :: rest)) = 
     let
-      coords : List (Integer, Integer)
-      coords = map (\(fr, fc) => (the Integer (cast (finToNat fr)), the Integer (cast (finToNat fc)))) offsets
-
-      -- Use 'the Integer' here to clarify we are casting Nat -> Integer
-      startR : Integer
-      startR = the Integer (cast (finToNat fR))
-      
-      startC : Integer
-      startC = the Integer (cast (finToNat fC))
-      
-      rs = map fst coords
-      cs = map snd coords
-      
-      minR = foldl min startR rs
-      maxR = foldl max startR rs
-      minC = foldl min startC cs
-      maxC = foldl max startC cs
-      
-      rowRange = [minR .. maxR]
-      colRange = [minC .. maxC]
-      
-      isPart : Integer -> Integer -> Bool
-      isPart r' c' = any (\(or, oc) => or == r' && oc == c') coords
-      
-      renderRow : Integer -> String
-      renderRow r' = (fastConcat $ map (\c' => if isPart r' c' then "■ " else "· ") colRange)
+        rs = map fst offsets
+        cs = map snd offsets
+        minR = foldl min r rs
+        maxR = foldl max r rs
+        minC = foldl min c cs
+        maxC = foldl max c cs
+        
+        rowRange = [minR .. maxR]
+        colRange = [minC .. maxC]
+        
+        isPart : Int -> Int -> Bool
+        isPart r' c' = any (\(or, oc) => or == r' && oc == c') offsets
+        
+        renderRow : Int -> String
+        renderRow r' = (fastConcat $ map (\c' => if isPart r' c' then "■ " else "· ") colRange)
         
     in "\n" ++ (unlines $ map renderRow rowRange)
 
@@ -321,23 +296,22 @@ shapePool = [
 allShapes : Stream Shape
 allShapes = cycle shapePool
 
-nth : Nat -> List a -> Maybe a
-nth 0 (x::xs) = Just x
-nth (S k) (x::xs) = nth k xs
-nth _ _ = Nothing
+processTurn : GameState -> (handIdx : Nat) -> (r, c : Int) -> Maybe GameState
+processTurn (MkGameState b hand) idx r c = do
+  targetShape <- nth idx hand
+  case makeMove b r c targetShape of
+    Left _ => Nothing 
+    Right newBoard => Just (MkGameState newBoard (deleteAt idx hand))
+  where
+    nth : Nat -> List a -> Maybe a
+    nth 0 (x::xs) = Just x
+    nth (S k) (x::xs) = nth k xs
+    nth _ _ = Nothing
 
-deleteAt : Nat -> List a -> List a
-deleteAt 0 (x::xs) = xs
-deleteAt (S k) (x::xs) = x :: deleteAt k xs
-deleteAt _ [] = []
-
-processTurn : GameState -> (handIdx : Nat) -> (r, c : Fin BoardSize) -> Maybe GameState
-processTurn (MkGameState b hand) idx r c with (nth idx hand)
-  processTurn (MkGameState b hand) idx r c | Nothing = Nothing
-  processTurn (MkGameState b hand) idx r c | Just targetShape with (makeMove b r c targetShape)
-    processTurn (MkGameState b hand) idx r c | Just targetShape | Left _ = Nothing
-    processTurn (MkGameState b hand) idx r c | Just targetShape | Right newBoard = 
-      Just (MkGameState newBoard (deleteAt idx hand))
+    deleteAt : Nat -> List a -> List a
+    deleteAt 0 (x::xs) = xs
+    deleteAt (S k) (x::xs) = x :: deleteAt k xs
+    deleteAt _ [] = []
 
 randomShapes : Stream Int -> List Shape -> Stream Shape
 randomShapes (n :: ns) pool = 
@@ -356,54 +330,34 @@ seedStream = iterate (\n => (n * 1103515245 + 12345) `mod` 2147483647) 12345
 gameLoop : Fuel -> GameState -> Stream Shape -> IO ()
 gameLoop Dry _ _ = putStrLn "Game session ended (Out of fuel)." 
 gameLoop (More tank) (MkGameState b hand) rest = do
-  -- 1. Refresh hand if empty
   let (currentHand, nextStream) = if null hand 
                                   then (Prelude.take 3 rest, drop 3 rest) 
                                   else (hand, rest) 
   
-  -- 2. Display Board and Hand
   putStrLn (show @{GameView} b) 
   putStrLn "Your Hand:"
-  let handDisplay = zipWith (\i, s => show i ++ ":" ++ show s) [0..length currentHand] currentHand 
+  let handDisplay = zipWith (\i, s => show i ++ ":" ++ show s) [0..(length currentHand)] currentHand 
   putStrLn (unlines handDisplay) 
 
-  -- 3. Check for Game Over using the Dependent Pair
-  case findMove b currentHand of
+  case anyMovesPossible b currentHand of
     Nothing => do
       putStrLn "!!! GAME OVER !!! No more moves possible with the remaining hand." 
       putStrLn "Restarting game..."
       gameLoop tank (MkGameState emptyBoard []) nextStream 
-      
-    Just (s ** r ** c ** prf) => do
+    Just (s ** r ** c ** (proofInHand, placementPrf)) => do
       putStr "Enter <shapeIdx> <row> <col>: "
       input <- getLine 
-      let inputWords = words input 
+      let cmds = map cast (words input) 
       
-      case inputWords of
-        [sIdxStr, rStr, cStr] => do
-          let sIdx = cast {to=Integer} sIdxStr
-          let rVal = cast {to=Integer} rStr
-          let cVal = cast {to=Integer} cStr
-          
-          -- 4. Convert to Nat for natToFin
-          let rNat = the Nat (fromInteger rVal)
-          let cNat = the Nat (fromInteger cVal)
-
-          case (natToFin rNat BoardSize, natToFin cNat BoardSize) of
-            (Just rFin, Just cFin) => do
-              -- Pass the Fins directly to processTurn
-              case processTurn (MkGameState b currentHand) (fromInteger sIdx) rFin cFin of
-                Just nextState => do
-                  putStrLn "--- Move Accepted ---"
-                  gameLoop tank nextState nextStream 
-                Nothing => do
-                  putStrLn "!!! Invalid Move (Blocked or Bad Shape) !!!" 
-                  gameLoop tank (MkGameState b currentHand) nextStream 
-            _ => do
-              -- This is the "contradiction" branch: one of the inputs was > 7 or < 0
-              putStrLn "!!! Error: Coordinates must be between 0 and 7 !!!"
-              gameLoop tank (MkGameState b currentHand) nextStream
-                  
+      case cmds of
+        [sIdx, r, c] => 
+          case processTurn (MkGameState b currentHand) (fromInteger (cast sIdx)) r c of
+            Just nextState => do
+              putStrLn "--- Move Accepted ---"
+              gameLoop tank nextState nextStream 
+            Nothing => do
+              putStrLn "!!! Invalid Move !!!" 
+              gameLoop tank (MkGameState b currentHand) nextStream 
         _ => do
           putStrLn "Error: Use format '0 3 3'" 
           gameLoop tank (MkGameState b currentHand) nextStream
