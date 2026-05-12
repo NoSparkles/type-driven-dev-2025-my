@@ -6,6 +6,7 @@ import Decidable.Equality
 import Data.String
 import Data.Stream
 import Data.Fuel
+import Data.List.Elem
 
 %default total
 
@@ -115,6 +116,9 @@ line3v = MkShape [(0,0), (1,0), (2,0)]
 line3h : Shape
 line3h = MkShape [(0,0), (0,1), (0,2)]
 
+allFins : Vect BoardSize (Fin BoardSize)
+allFins = tabulate id
+
 public export
 data ValidPlacement : Shape -> Type where
   NoMore  : ValidPlacement (MkShape [])
@@ -142,18 +146,40 @@ canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
       Just (NextPos resR resC later)
     No _ => Nothing
 
-canFitAnywhere : Board -> Shape -> Bool
-canFitAnywhere board shape = 
-  any (\r => any (\c => 
-    isJust (canPlaceAt board r c shape)
-  ) [0..7]) [0..7]
-  where
-    isJust : Maybe a -> Bool
-    isJust (Just _) = True
-    isJust Nothing  = False
+public export
+AnyMove : Board -> List Shape -> Type
+AnyMove board hand = 
+  (s : Shape ** (r : Fin BoardSize ** (c : Fin BoardSize ** (Elem s hand, ValidPlacement s))))
 
-anyMovesPossible : Board -> List Shape -> Bool
-anyMovesPossible board hand = any (canFitAnywhere board) hand
+findFit : (board : Board) -> (s : Shape) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement s)
+findFit board s = searchRows allFins
+  where
+    searchCols : Fin BoardSize -> Vect n (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement s)
+    searchCols r [] = Nothing
+    searchCols r (c :: cs) = 
+      case canPlaceAt board (cast (finToNat r)) (cast (finToNat c)) s of
+        Just prf => Just (r ** c ** prf)
+        Nothing  => searchCols r cs
+
+    searchRows : Vect m (Fin BoardSize) -> Maybe (r : Fin BoardSize ** c : Fin BoardSize ** ValidPlacement s)
+    searchRows [] = Nothing
+    searchRows (r :: rs) = 
+      case searchCols r allFins of
+        Just result => Just result
+        Nothing     => searchRows rs
+  where
+    firstJust : List a -> Maybe a
+    firstJust [] = Nothing
+    firstJust (x :: xs) = Just x
+
+anyMovesPossible : (board : Board) -> (hand : List Shape) -> Maybe (AnyMove board hand)
+anyMovesPossible board [] = Nothing
+anyMovesPossible board (s :: ss) = 
+  case findFit board s of
+    Just (r ** c ** prf) => Just (s ** r ** c ** (Here, prf))
+    Nothing => do
+      (s' ** r ** c ** (idx, prf)) <- anyMovesPossible board ss
+      Just (s' ** r ** c ** (There idx, prf))
 
 public export
 data RowStatus : Vect n Bool -> Type where
@@ -193,9 +219,6 @@ makeMove board br bc shape with (canPlaceAt board br bc shape)
     in Right blastedBoard
   makeMove board br bc shape | Nothing = 
     Left board
-
-allFins : Vect BoardSize (Fin BoardSize)
-allFins = tabulate id
 
 hasValidMove : Board -> Shape -> Bool
 hasValidMove board shape = 
@@ -305,12 +328,12 @@ gameLoop (More tank) (MkGameState b hand) rest = do
   let handDisplay = zipWith (\i, s => show i ++ ":" ++ show s) [0..(length currentHand)] currentHand 
   putStrLn (unlines handDisplay) 
 
-  if not (anyMovesPossible b currentHand)
-    then do
+  case anyMovesPossible b currentHand of
+    Nothing => do
       putStrLn "!!! GAME OVER !!! No more moves possible with the remaining hand." 
       putStrLn "Restarting game..."
       gameLoop tank (MkGameState emptyBoard []) nextStream 
-    else do
+    Just (s ** r ** c ** (proofInHand, placementPrf)) => do
       putStr "Enter <shapeIdx> <row> <col>: "
       input <- getLine 
       let cmds = map cast (words input) 
