@@ -194,6 +194,21 @@ anyMovesPossible board (s :: ss) =
       Just (s' ** r ** c ** (idx, prf)) => Just (s' ** r ** c ** (There idx, prf))
       Nothing => Nothing
 
+zipVect : Vect BoardSize Bool -> Vect BoardSize (Fin BoardSize, Bool)
+zipVect xs = zip allFins xs
+
+replaceFalse : Fin BoardSize -> Vect BoardSize (Fin BoardSize, Bool) -> Vect BoardSize (Fin BoardSize, Bool)
+replaceFalse x xs = map (\(i, b) => if i == x
+                      then (i, False) else (i, b)) xs
+
+unzipVect : Vect BoardSize (Fin BoardSize, Bool) -> Vect BoardSize Bool
+unzipVect xs = map (\(i, b) => b) xs
+
+data RowStatus2 : Vect n Bool -> Type where
+  Full2    : RowStatus2 (replicate n True)
+  AlmostFull2 : (ind : Fin BoardSize) -> RowStatus2 (unzipVect (replaceFalse ind (zipVect (replicate BoardSize True))))
+  NotFull2 : (row : Vect n Bool) -> RowStatus2 row
+
 data RowStatus : Vect n Bool -> Type where
   Full    : RowStatus (replicate n True)
   NotFull : (row : Vect n Bool) -> RowStatus row
@@ -362,3 +377,6 @@ main : IO ()
 main = do
   let shapes = randomShapes seedStream shapePool
   gameLoop forever (MkGameState emptyBoard []) shapes
+
+
+isFull2 : Vect BoardSize Bool -> Bool 
