@@ -10,43 +10,35 @@ import Data.List.Elem
 
 %default total
 
-public export
 BoardSize : Nat
 BoardSize = 8
 
-public export
 Board : Type
 Board = Vect BoardSize (Vect BoardSize Bool)
 
-public export
 emptyBoard : Board
 emptyBoard = replicate BoardSize (replicate BoardSize False)
 
-public export
 data IsEmpty : (board : Board) -> (r : Fin BoardSize) -> (c : Fin BoardSize) -> Type where
   ItIsFree : (index c (index r board) = False) -> IsEmpty board r c
 
-public export
 occupiedNotFree : (index c (index r board) = True) -> IsEmpty board r c -> Void
 occupiedNotFree prf (ItIsFree freePrf) = 
   let contradiction = trans (sym prf) freePrf in
   case contradiction of 
     Refl impossible
 
-public export
 checkCell : (board : Board) -> (r : Fin BoardSize) -> (c : Fin BoardSize) -> Dec (IsEmpty board r c)
 checkCell board r c with (index c (index r board)) proof p
   checkCell board r c | False = Yes (ItIsFree (rewrite p in Refl))
   checkCell board r c | True  = No (\(ItIsFree contraPrf) => occupiedNotFree p (ItIsFree contraPrf))
 
-public export
 placeBlock : (board : Board) -> (r : Fin BoardSize) -> (c : Fin BoardSize) -> Board
 placeBlock board r c = 
   let targetRow = index r board
       newRow = replaceAt c True targetRow
   in replaceAt r newRow board
 
-public export
 record Shape where
   constructor MkShape
   offsets : List (Int, Int)
@@ -119,7 +111,6 @@ line3h = MkShape [(0,0), (0,1), (0,2)]
 allFins : Vect BoardSize (Fin BoardSize)
 allFins = tabulate id
 
-public export
 data OffsetValid : Board -> (baseR, baseC : Int) -> (offset : (Int, Int)) -> Type where
   MkOffsetValid : {baseR, baseC : Int} -> {offR, offC : Int} ->
                   (resR : Fin BoardSize) -> 
@@ -129,7 +120,6 @@ data OffsetValid : Board -> (baseR, baseC : Int) -> (offset : (Int, Int)) -> Typ
                   (the Integer (cast (finToNat resC)) = cast baseC + cast offC) ->
                   OffsetValid board baseR baseC (offR, offC)
 
-public export
 data ValidPlacement : Board -> (br, bc : Int) -> Shape -> Type where
   NoMore  : {board : Board} -> {br, bc : Int} -> 
             ValidPlacement board br bc (MkShape [])
@@ -140,7 +130,6 @@ data ValidPlacement : Board -> (br, bc : Int) -> Shape -> Type where
             ValidPlacement board br bc (MkShape rest) ->
             ValidPlacement board br bc (MkShape ((offR, offC) :: rest))
 
-public export
 applyPlacement : Board -> ValidPlacement board br bc s -> Board
 applyPlacement board NoMore = board
 applyPlacement board (NextPos (MkOffsetValid r c _ _ _) rest) = 
@@ -155,7 +144,6 @@ integerToFinWithProof n m = case integerToFin n m of
     No _    => Nothing
   Nothing => Nothing
 
-public export
 applyShape : (board : Board) -> (br, bc : Int) -> (s : Shape) -> ValidPlacement board br bc s -> Board
 applyShape board br bc s prf = applyPlacement board prf
 
@@ -176,7 +164,6 @@ canPlaceAt board br bc (MkShape ((offR, offC) :: rest)) = do
       Just (NextPos (MkOffsetValid resR resC emptyPrf proofR proofC) later)
     No _ => Nothing
 
-public export
 AnyMove : Board -> List Shape -> Type
 AnyMove board hand = 
   (s : Shape ** (r : Fin BoardSize ** (c : Fin BoardSize ** (Elem s hand, ValidPlacement board (cast (finToNat r)) (cast (finToNat c)) s))))
@@ -207,12 +194,10 @@ anyMovesPossible board (s :: ss) =
       Just (s' ** r ** c ** (idx, prf)) => Just (s' ** r ** c ** (There idx, prf))
       Nothing => Nothing
 
-public export
 data RowStatus : Vect n Bool -> Type where
   Full    : RowStatus (replicate n True)
   NotFull : (row : Vect n Bool) -> RowStatus row
 
-public export
 inspectRow : (v : Vect BoardSize Bool) -> RowStatus v
 inspectRow v with (decEq v (replicate BoardSize True))
   inspectRow (replicate BoardSize True) | (Yes Refl) = Full
@@ -223,7 +208,6 @@ isRowFull row with (inspectRow row)
   isRowFull _ | Full = True
   isRowFull _ | NotFull _ = False
 
-public export
 clearFullRows : Board -> Board
 clearFullRows board = 
   let rowMask = map isRowFull board
@@ -236,7 +220,6 @@ clearFullRows board =
       )
     )
 
-public export
 makeMove : Board -> (br, bc : Int) -> Shape -> Either Board Board
 makeMove board br bc shape with (canPlaceAt board br bc shape)
   makeMove board br bc shape | Just prf = 
@@ -266,7 +249,6 @@ showRow row = "|" ++ (fastConcat $ toList $ map (\b => if b then "■" else "·"
         rows = toList $ map showRow (zip allFins board)
     in unlines (header :: divider :: rows ++ [divider])
 
-public export
 Show Shape where
   show (MkShape []) = "Empty Shape"
   show (MkShape offsets@((r, c) :: rest)) = 
@@ -289,13 +271,11 @@ Show Shape where
         
     in "\n" ++ (unlines $ map renderRow rowRange)
 
-public export
 record GameState where
   constructor MkGameState
   board : Board
   hand  : List Shape
 
-public export
 shapePool : List Shape
 shapePool = [ 
   iPieceV, iPieceH, 
